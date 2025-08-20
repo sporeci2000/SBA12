@@ -1,25 +1,81 @@
-require('dotenv').config();
-const express = require('express');
-const movieRoutes = require('./routes/movieRoutes');
+const axios = require('axios');
 
-const app = express();
-const PORT = 3004;
+const OMDB_BASE_URL = 'http://www.omdbapi.com/';
 
-app.get('/', (_req, res) => {
-    res.json({ status: 'ok', service: 'Movie Finder API' });
+// Helper to call OMDb with params
+const omdb = axios.create({
+  baseURL: OMDB_BASE_URL,
+  timeout: 10_000
 });
 
-app.use('/api', movieRoutes);
+// GET /api/search?title=...
+async function searchMovies(req, res) {
+  const { title } = req.query;
 
-app.use((_req, res) => {
-    res.status(404).json({ error: 'Route not found' });
-});
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: 'Title query parameter is required' });
+  }
 
-app.use((err, _req, res, _next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
+  try {
+    const { data } = await omdb.get('/', {
+      params: {
+        s: title.trim(),
+        apikey: process.env.OMDB_API_KEY
+      }
+    });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on: http://localhost:${PORT}`);
-});
+    // OMDb signals failures with Response: "False"
+    if (data?.Response === 'False') {
+      return res.status(404).json({ error: data?.Error || 'No results found' });
+    }
+
+    // Cleaned-up results (camelCased and minimal fields)
+    const results = (data.Search || []).map(({ Title, Year, imdbID, Type, Poster }) => ({
+      title: Title,
+      year: Year,
+      imdbID,
+      type: Type,
+      poster: Poster
+    }));
+
+    return res.json({
+      totalResults: Number(data.totalResults) || results.length,
+      results
+    });
+  } catch (err) {
+    console.error('OMDb search error:', err.message);
+    return res.status(502).json({ error: 'Upstream service error' });
+  }
+}
+
+// GET /api/movies/:id
+async function getMovieDetails(req, res) {
+  const { id } = req.params;
+
+  if (!id || !id.trim()) {
+    return res.status(400).json({ error: 'Movie ID (imdbID) is required' });
+  }
+
+  try {
+    const { data } = await omdb.get('/', {
+      params: {
+        i: id.trim(),
+        apikey: process.env.OMDB_API_KEY,
+        plot: 'full' // nice to have: full plot
+      }
+    });
+
+    if (data?.Response === 'False') {
+      return res.status(404).json({ error: data?.Error || 'Movie not found' });
+    }
+
+    // You can pass through the full OMDb payload,
+    // or pick fields. For now, pass through.
+    return res.json(data);
+  } catch (err) {
+    console.error('OMDb details error:', err.message);
+    return res.status(502).json({ error: 'Upstream service error' });
+  }
+}
+
+module.exports = { searchMovies, getMovieDetails };
