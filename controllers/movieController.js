@@ -1,81 +1,57 @@
+// Import axios to make HTTP requests to the OMDb API
 const axios = require('axios');
 
+// Base URL of the OMDb API
 const OMDB_BASE_URL = 'http://www.omdbapi.com/';
 
-// Helper to call OMDb with params
-const omdb = axios.create({
-  baseURL: OMDB_BASE_URL,
-  timeout: 10_000
-});
 
-// GET /api/search?title=...
 async function searchMovies(req, res) {
-  const { title } = req.query;
+    // Extract the 'title' query parameter from the request
+    const { title } = req.query;
 
-  if (!title || !title.trim()) {
-    return res.status(400).json({ error: 'Title query parameter is required' });
-  }
-
-  try {
-    const { data } = await omdb.get('/', {
-      params: {
-        s: title.trim(),
-        apikey: process.env.OMDB_API_KEY
-      }
-    });
-
-    // OMDb signals failures with Response: "False"
-    if (data?.Response === 'False') {
-      return res.status(404).json({ error: data?.Error || 'No results found' });
+    // Validate that a title was provided
+    if (!title) {
+        return res.status(400).json({ error: 'Title is required' });
     }
 
-    // Cleaned-up results (camelCased and minimal fields)
-    const results = (data.Search || []).map(({ Title, Year, imdbID, Type, Poster }) => ({
-      title: Title,
-      year: Year,
-      imdbID,
-      type: Type,
-      poster: Poster
-    }));
+    try {
+        // Make a GET request to the OMDb API with search term and API key
+        const response = await axios.get(OMDB_BASE_URL, {
+            params: {
+                s: title,
+                apikey: process.env.OMDB_API_KEY
+            }
+        });
 
-    return res.json({
-      totalResults: Number(data.totalResults) || results.length,
-      results
-    });
-  } catch (err) {
-    console.error('OMDb search error:', err.message);
-    return res.status(502).json({ error: 'Upstream service error' });
-  }
+        // Send OMDb’s response data directly back to the client
+        res.json(response.data);
+    } catch (err) {
+        console.error('OMDb search error:', err.message);
+        res.status(500).json({ error: 'Something went wrong' });
+    }
 }
 
-// GET /api/movies/:id
+
 async function getMovieDetails(req, res) {
-  const { id } = req.params;
 
-  if (!id || !id.trim()) {
-    return res.status(400).json({ error: 'Movie ID (imdbID) is required' });
-  }
+    // Extract the 'id' route parameter 
+    const { id } = req.params;
 
-  try {
-    const { data } = await omdb.get('/', {
-      params: {
-        i: id.trim(),
-        apikey: process.env.OMDB_API_KEY,
-        plot: 'full' // nice to have: full plot
-      }
-    });
+    try {
+        // Make a GET request to the OMDb API with movie ID and API key
+        const response = await axios.get(OMDB_BASE_URL, {
+            params: {
+                i: id,
+                apikey: process.env.OMDB_API_KEY
+            }
+        });
 
-    if (data?.Response === 'False') {
-      return res.status(404).json({ error: data?.Error || 'Movie not found' });
+        res.json(response.data);
+    } catch (err) {
+        console.error('OMDb details error:', err.message);
+        res.status(500).json({ error: 'Something went wrong' });
     }
-
-    // You can pass through the full OMDb payload,
-    // or pick fields. For now, pass through.
-    return res.json(data);
-  } catch (err) {
-    console.error('OMDb details error:', err.message);
-    return res.status(502).json({ error: 'Upstream service error' });
-  }
 }
 
+// Export controller functions 
 module.exports = { searchMovies, getMovieDetails };
