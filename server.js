@@ -13,6 +13,11 @@ const PORT = process.env.PORT || 3004;
 // Mount movie routes under /api
 app.use('/api', movieRoutes);
 
+// Root route 
+app.get('/', (_req, res) => {
+    res.send('Welcome to Movie Finder API!');
+});
+
 // 404 handler
 app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });
